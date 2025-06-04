@@ -65,6 +65,24 @@ def get_charging_points_by_polygon(
 
     df = pd.DataFrame(data)
 
+    # if df is empty, return an empty GeoDataFrame
+    if df.empty:
+        return gpd.GeoDataFrame(
+            columns=[
+                "id",
+                "title",
+                "address",
+                "town",
+                "state",
+                "country",
+                "latitude",
+                "longitude",
+                "url",
+                "power_kw",
+                "num_points",
+                "geometry",
+            ]
+        )
     df = df[(df["latitude"] != 0) & (df["longitude"] != 0)]
 
     # Create geometry column
