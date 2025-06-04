@@ -5,7 +5,9 @@ from typing import Any, Union
 import time
 
 
-def _prepare_polygon(geometry: Union[Polygon, MultiPolygon], tolerance: float = 0.0001) -> str:
+def _prepare_polygon(
+    geometry: Union[Polygon, MultiPolygon], tolerance: float = 0.001
+) -> str:
     """
     Simplify and convert a shapely Polygon/MultiPolygon to an Overpass 'poly' string.
     """
@@ -40,7 +42,9 @@ def _build_overpass_query(poly_str: str, query_params: list[tuple[str, str]]) ->
     return query
 
 
-def _fetch_overpass_data(query: str, endpoint: str = "http://overpass-api.de/api/interpreter") -> list[dict[str, Any]]:
+def _fetch_overpass_data(
+    query: str, endpoint: str = "http://overpass-api.de/api/interpreter"
+) -> list[dict[str, Any]]:
     """
     Send a GET request to Overpass API and return the elements list.
     Retries up to 3 times with exponential backoff on failure.
@@ -67,11 +71,12 @@ def _build_node_index(elements: list[dict[str, Any]]) -> dict[int, tuple[float, 
     """
     Create a mapping from node ID to (lon, lat) coordinates.
     """
-    return {el["id"]: (el["lon"], el["lat"])
-            for el in elements if el["type"] == "node"}
+    return {el["id"]: (el["lon"], el["lat"]) for el in elements if el["type"] == "node"}
 
 
-def _extract_features(elements: list[dict[str, Any]], node_index: dict[int, tuple[float, float]]) -> list[dict[str, Any]]:
+def _extract_features(
+    elements: list[dict[str, Any]], node_index: dict[int, tuple[float, float]]
+) -> list[dict[str, Any]]:
     """
     Convert raw Overpass elements into a list of feature dicts
     with flattened tags and shapely Point geometries.
@@ -100,7 +105,9 @@ def _extract_features(elements: list[dict[str, Any]], node_index: dict[int, tupl
     return features
 
 
-def _build_gdf(features: list[dict[str, Any]], crs: str = "EPSG:4326") -> gpd.GeoDataFrame:
+def _build_gdf(
+    features: list[dict[str, Any]], crs: str = "EPSG:4326"
+) -> gpd.GeoDataFrame:
     """
     Construct a GeoDataFrame from a list of feature dicts.
     """
@@ -112,7 +119,7 @@ def _build_gdf(features: list[dict[str, Any]], crs: str = "EPSG:4326") -> gpd.Ge
 
 def query_overpass_candidates_inside_pc4_area(
     geometry: Union[Polygon, MultiPolygon],
-    query_params: list[tuple[str, str]] = [("amenity", "parking")]
+    query_params: list[tuple[str, str]] = [("amenity", "parking")],
 ) -> gpd.GeoDataFrame:
     """
     Main entry: Query multiple OSM tags within a given shapely geometry,
