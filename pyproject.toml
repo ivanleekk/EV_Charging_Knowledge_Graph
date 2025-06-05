@@ -9,6 +9,8 @@ dependencies = [
     "ipykernel>=6.29.5",
     "matplotlib>=3.10.3",
     "polyline>=2.0.2",
+    "pydeck>=0.9.1",
     "requests>=2.32.3",
     "shapely>=2.1.0",
+    "streamlit>=1.45.1",
 ]
