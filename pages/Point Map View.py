@@ -14,9 +14,17 @@ NEO4J_PASS = "12345678"
 def load_data():
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
     query = """
-    MATCH (c:CandidateLocation) - [] -> (p:PC4Area) - [] -> (m:Municipality)
-
-    RETURN c.lat AS Latitude, c.lon AS Longitude, c.score AS Score, c.distance_to_nearest AS DistanceToNearest, p.pc4_code AS PC4Code, m.name AS MunicipalityName
+    MATCH (c:CandidateLocation)-[]->(p:PC4Area)-[]->(m:Municipality)
+    RETURN 
+        id(c) AS CandidateId,
+        c.location.latitude AS Latitude,
+        c.location.longitude AS Longitude,
+        c.nearest_location.latitude AS NearestLat,
+        c.nearest_location.longitude AS NearestLon,
+        c.distance_to_nearest AS DistanceToNearest,
+        c.score AS Score,
+        p.pc4_code AS PC4Code,
+        m.name AS MunicipalityName
     """
     with driver.session() as session:
         result = session.run(query)
@@ -40,6 +48,7 @@ def score_to_color(score):
 
 
 # --- DISPLAY IN STREAMLIT ---
+st.set_page_config(page_title="EV Candidate Locations Map", layout="wide")
 st.title("EV Candidate Locations Map (Neo4j + PyDeck)")
 # --- MUNICIPALITY FILTER ---
 municipalities = ["All"] + sorted(df["MunicipalityName"].dropna().unique().tolist())
@@ -80,16 +89,127 @@ mid_lat = df["Latitude"].mean()
 mid_lon = df["Longitude"].mean()
 
 view_state = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=10, pitch=0)
+deck = pdk.Deck(
+    layers=[layer],
+    initial_view_state=view_state,
+    map_style="dark",
+    tooltip={
+        "text": "ID: {CandidateId}\nScore: {Score}\nDistance: {DistanceToNearest}\nPC4: {PC4Code}\nMunicipality: {MunicipalityName}"
+    },
+)
+st.dataframe(df, use_container_width=True)
 
 
 st.pydeck_chart(
-    pdk.Deck(
-        layers=[layer],
-        initial_view_state=view_state,
-        map_style="dark",
-        tooltip={
-            "text": "Score: {Score}\nDistance: {DistanceToNearest}\nCoordinates: [{Longitude}, {Latitude}]\nPC4 Code: {PC4Code}\nMunicipality: {MunicipalityName}",
-        },
-    ),
+    deck,
     use_container_width=True,
 )
+
+cid = st.selectbox(
+    "Select a Candidate Location",
+    options=df["CandidateId"].tolist(),
+    index=0,
+    key="candidate_select",
+    help="Select a candidate location to view its details.",
+)
+charging_radius = st.slider(
+    "Charging Station Radius (km)",
+    min_value=1.0,
+    max_value=100.0,
+    value=1.0,
+    step=0.25,
+    help="Select the radius in kilometers to search for nearby charging stations.",
+)
+
+charging_limit = st.number_input(
+    "Charging Stations Limit",
+    min_value=1,
+    max_value=1000,
+    value=10,
+    step=1,
+    help="Limit the number of charging stations displayed on the map.",
+)
+
+# display a map of the selected candidate location with all charging stations nearby
+if cid:
+    selected_candidate = df[df["CandidateId"] == cid].iloc[0]
+
+    def load_charging_stations():
+        driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
+        query = f"""
+        MATCH (a:EVChargingStation), (b:CandidateLocation)
+        WHERE id(b) = {cid}
+        MATCH (a:EVChargingStation), (b:CandidateLocation)
+        WHERE point.distance(a.location, b.location) < {charging_radius} * 1000
+        RETURN id(a) AS EVChargingStationID, id(b) AS CandidateLocationID, a.location as EVChargingStationLocation, point.distance(a.location, b.location)/1000 AS DistanceToCandidate 
+        ORDER BY DistanceToCandidate ASC
+        LIMIT {charging_limit}
+        """
+        with driver.session() as session:
+            result = session.run(query, candidate_id=selected_candidate["CandidateId"])
+            stations = pd.DataFrame([r.data() for r in result])
+        driver.close()
+        if stations.empty:
+            return pd.DataFrame()
+        return stations
+
+    charging_stations = load_charging_stations()
+    # convert each row from dictionary to a DataFrame row
+    if isinstance(charging_stations, pd.Series):
+        charging_stations = pd.DataFrame(charging_stations.tolist())
+
+    if not charging_stations.empty:
+        charging_stations["color"] = charging_stations.apply(
+            lambda row: [0, 100, 255], axis=1
+        )  # Blue color per row
+        charging_stations["radius"] = charging_stations.apply(
+            lambda row: 10, axis=1
+        )  # Fixed radius per row
+        st.dataframe(charging_stations, use_container_width=True)
+        # add candidate location to the map
+        candidate_location = {
+            "EVChargingStationLocation": [
+                selected_candidate["Longitude"],
+                selected_candidate["Latitude"],
+            ],
+            "EVChargingStationID": selected_candidate["CandidateId"],
+            "DistanceToCandidate": 0,  # Distance is zero for the candidate itself
+            "color": [255, 0, 0],  # Red color for the candidate location
+            "radius": 10,  # Fixed radius for the candidate location
+        }
+
+        charging_stations = pd.concat(
+            [charging_stations, pd.DataFrame([candidate_location])], ignore_index=True
+        )
+
+        charging_layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=charging_stations,
+            get_position="EVChargingStationLocation",
+            get_fill_color="color",
+            radiusMinPixels=4,
+            radiusMaxPixels=30,
+            pickable=True,
+            opacity=0.8,
+        )
+
+        charging_view_state = pdk.ViewState(
+            latitude=selected_candidate["Latitude"],
+            longitude=selected_candidate["Longitude"],
+            zoom=10,
+            pitch=0,
+        )
+        charging_deck = pdk.Deck(
+            layers=[charging_layer],
+            initial_view_state=charging_view_state,
+            map_style="dark",
+            tooltip={
+                "text": "Charging Station: {EVChargingStationID}\nDistance: {DistanceToCandidate} km"
+            },
+        )
+        st.pydeck_chart(
+            charging_deck,
+            use_container_width=True,
+        )
+    else:
+        st.warning("No charging stations found within the selected radius.")

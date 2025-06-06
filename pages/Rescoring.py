@@ -42,32 +42,45 @@ def process_municipality(municipality_name):
         result = session.run(
             """
             MATCH (c:CandidateLocation)-[:IS_LOCATED_IN]->(p:PC4Area)-[:IS_LOCATED_IN]->(m:Municipality {name: $municipality})
-            RETURN properties(c) AS c, properties(p) AS p, properties(m) AS m
-        """,
+            RETURN c.location.latitude AS lat,
+                   c.location.longitude AS lon,
+                   c.distance_to_nearest AS distance_to_nearest,
+                   p.density AS pc4_density,
+                   m.home_value AS home_value,
+                   m.vehicles AS vehicles,
+                   m.population_density AS pop_density
+            """,
             municipality=municipality_name,
         )
 
         for record in result:
-            c, p, m = record["c"], record["p"], record["m"]
-            if not all([c, p, m]) or m.get("home_value") is None:
+            if None in record.values():
                 continue
-            score = calculate_score(c, p, m)
-            if score is None:
-                continue
-            c["score"] = score
-            all_candidates.append(c)
 
-    # Write scores back to Neo4j
+            score = (
+                w1 * record["distance_to_nearest"]
+                + w2 * (1 / (record["pc4_density"] + 1))
+                + w3 * (record["home_value"] / 100000)
+                + w4 * (record["vehicles"] / 1000)
+                + w5 * (record["pop_density"] / 1000)
+            )
+
+            all_candidates.append(
+                {"lat": record["lat"], "lon": record["lon"], "score": score}
+            )
+
+    # Write scores back to Neo4j using spatial matching
     with driver.session() as session:
         for batch in batched(all_candidates, BATCH_SIZE):
             session.run(
                 """
                 UNWIND $candidates AS candidate
-                MATCH (c:CandidateLocation {lon: candidate.lon, lat: candidate.lat})
+                MATCH (c:CandidateLocation {location: point({latitude: candidate.lat, longitude: candidate.lon})})
                 SET c.score = candidate.score
-            """,
+                """,
                 candidates=batch,
             )
+
     print(
         f"[{municipality_name}] Scored {len(all_candidates)} candidates in {time.perf_counter() - start:.2f}s."
     )
