@@ -16,7 +16,7 @@ def load_data():
     query = """
     MATCH (c:CandidateLocation) - [] -> (p:PC4Area) - [] -> (m:Municipality)
 
-    RETURN c.lat AS Latitude, c.lon AS Longitude, c.score AS Score, c.distance_to_nearest AS DistanceToNearest, p.pc4_code AS PC4Code, p.density as ChargerDensity, m.name AS MunicipalityName, m.vehicles AS CarCount
+    RETURN c.location AS Location, c.score AS Score, c.distance_to_nearest AS DistanceToNearest, p.pc4_code AS PC4Code, p.density as ChargerDensity, m.name AS MunicipalityName, m.vehicles AS CarCount
 
     """
     with driver.session() as session:
@@ -29,6 +29,9 @@ def load_data():
 df = load_data()
 unfiltered_df = df.copy()
 # --- number input TO SELECT TOP N ---
+st.set_page_config(page_title="Table View", layout="wide")
+st.title("Optimal new EV Charging Locations in Zuid-Holland")
+st.header("Best Locations for EV Charging Stations")
 n = st.number_input(
     "Select number of top locations to show",
     min_value=10,
@@ -40,14 +43,18 @@ n = st.number_input(
 # --- FILTER TOP N LOCATIONS ---
 df = df.sort_values(by="Score", ascending=False).head(n)
 
-st.title("Optimal new EV Charging Locations in Zuid-Holland")
-st.header("Best Locations for EV Charging Stations")
+
 st.dataframe(df)
 
 st.header("Number of Top Locations per Municipality")
 top_locations_per_municipality = df["MunicipalityName"].value_counts().reset_index()
 top_locations_per_municipality.columns = ["MunicipalityName", "TopLocationsCount"]
 st.dataframe(top_locations_per_municipality)
+
+st.header("Number of Top Locations per PC4 Area")
+top_locations_per_pc4 = df["PC4Code"].value_counts().reset_index()
+top_locations_per_pc4.columns = ["PC4Code", "TopLocationsCount"]
+st.dataframe(top_locations_per_pc4)
 
 st.header("Municipality Charging Stats")
 

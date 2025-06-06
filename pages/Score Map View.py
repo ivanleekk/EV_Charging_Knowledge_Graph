@@ -14,10 +14,17 @@ NEO4J_PASS = "12345678"
 def load_data():
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
     query = """
-    MATCH (c:CandidateLocation) -[]-> (p:PC4Area) -[]-> (m:Municipality)
-    RETURN c.lat AS Latitude, c.lon AS Longitude, c.score AS Score,
-           c.distance_to_nearest AS DistanceToNearest,
-           p.pc4_code AS PC4Code, m.name AS MunicipalityName
+    MATCH (c:CandidateLocation)-[]->(p:PC4Area)-[]->(m:Municipality)
+    RETURN 
+        c.location.latitude AS Latitude,
+        c.location.longitude AS Longitude,
+        c.nearest_location.latitude AS NearestLat,
+        c.nearest_location.longitude AS NearestLon,
+        c.distance_to_nearest AS DistanceToNearest,
+        c.score AS Score,
+        p.pc4_code AS PC4Code,
+        p.geometry AS PC4Geometry,
+        m.name AS MunicipalityName
     """
     with driver.session() as session:
         result = session.run(query)
@@ -47,6 +54,9 @@ def score_to_color(score, min_score, max_score):
 
 
 # --- STREAMLIT UI ---
+st.set_page_config(
+    page_title="EV Candidate Locations Map with Elevation", layout="wide"
+)
 st.title("📍 EV Candidate Locations Map with Elevation (Neo4j + PyDeck)")
 
 df = load_data()
