@@ -18,12 +18,9 @@ def load_data():
     RETURN 
         c.location.latitude AS Latitude,
         c.location.longitude AS Longitude,
-        c.nearest_location.latitude AS NearestLat,
-        c.nearest_location.longitude AS NearestLon,
         c.distance_to_nearest AS DistanceToNearest,
         c.score AS Score,
         p.pc4_code AS PC4Code,
-        p.geometry AS PC4Geometry,
         m.name AS MunicipalityName
     """
     with driver.session() as session:
